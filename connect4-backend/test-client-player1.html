@@ -20,68 +20,97 @@
   <button onclick="move(6)">Col 6</button>
 </div>
 
-<script src="http://localhost:3000/socket.io/socket.io.js"></script>
 <script>
-  const socket = io("http://localhost:3000");
-  let gameId = null;
-  const username = "player1";
+// Robust Socket.IO loader for static hosting environments
+(function(){
+  const DEFAULT_LOCAL = 'http://localhost:3000';
+  const FALLBACK_PROD = 'https://connect4-realtime-backend.onrender.com';
+  const host = window.BACKEND_URL || (window.location.hostname === 'localhost' ? DEFAULT_LOCAL : FALLBACK_PROD);
+  const BACKEND_URL = host.replace(/\/+$|\s+/g,'')
+  window.BACKEND_URL = BACKEND_URL; // expose for debugging
+  console.log('Backend URL:', BACKEND_URL);
 
-  socket.on("waiting_for_opponent", () => {
-    console.log("⏳ WAITING FOR PVP OPPONENT...");
-  });
-
-  socket.on("game_start", (data) => {
-    console.log("🎮 GAME STARTED:", data.gameId);
-    console.log("Mode:", data.mode);
-    gameId = data.gameId;
-    console.table(data.board);
-    document.getElementById("gameControls").style.display = "block";
-  });
-
-  socket.on("game_update", (data) => {
-    console.log("TURN:", data.currentTurn);
-    console.table(data.board);
-  });
-
-  socket.on("game_over", (data) => {
-    console.log("🏆 GAME OVER:", data);
-    document.getElementById("gameControls").style.display = "none";
-  });
-
-  // PHASE 5: Reconnection events
-  socket.on("game_resume", (data) => {
-    console.log("🔄 GAME RESUMED:", data.gameId);
-    gameId = data.gameId;
-    console.table(data.board);
-    console.log("Current turn:", data.currentTurn);
-    document.getElementById("gameControls").style.display = "block";
-  });
-
-  socket.on("opponent_disconnected", ({ username }) => {
-    console.log(`⚠️ ${username} disconnected. Waiting for reconnect (30s)...`);
-  });
-
-  socket.on("opponent_reconnected", ({ username }) => {
-    console.log(`✅ ${username} reconnected. Game continues!`);
-  });
-
-  function joinPVP() {
-    console.log("Joining PVP game as", username);
-    socket.emit("join_game", { username, mode: "PVP" });
+  function loadSocketIo(src, cb){
+    if (typeof io === 'function') return cb();
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = cb;
+    s.onerror = function(){ console.error('Failed to load Socket.IO client from', src); cb(new Error('load_error')); };
+    document.head.appendChild(s);
   }
 
-  function move(col) {
-    if (!gameId) {
-      console.warn("Game not started yet");
+  function init(){
+    if (typeof io !== 'function') { console.error('Socket.IO client not available.'); return; }
+    const socket = io(BACKEND_URL, { transports: ['websocket'] });
+    window.socket = socket;
+
+    let gameId = null;
+    const username = 'player1';
+
+    socket.on('waiting_for_opponent', () => console.log('⏳ WAITING FOR PVP OPPONENT...'));
+
+    socket.on('game_start', (data) => {
+      console.log('🎮 GAME STARTED:', data.gameId);
+      console.log('Mode:', data.mode);
+      gameId = data.gameId;
+      console.table(data.board);
+      document.getElementById('gameControls').style.display = 'block';
+    });
+
+    socket.on('game_update', (data) => {
+      console.log('TURN:', data.currentTurn);
+      console.table(data.board);
+    });
+
+    socket.on('game_over', (data) => {
+      console.log('🏆 GAME OVER:', data);
+      document.getElementById('gameControls').style.display = 'none';
+    });
+
+    socket.on('game_resume', (data) => {
+      console.log('🔄 GAME RESUMED:', data.gameId);
+      gameId = data.gameId;
+      console.table(data.board);
+      console.log('Current turn:', data.currentTurn);
+      document.getElementById('gameControls').style.display = 'block';
+    });
+
+    socket.on('opponent_disconnected', ({ username }) => {
+      console.log(`⚠️ ${username} disconnected. Waiting for reconnect (30s)...`);
+    });
+
+    socket.on('opponent_reconnected', ({ username }) => {
+      console.log(`✅ ${username} reconnected. Game continues!`);
+    });
+
+    window.joinPVP = function(){
+      console.log('Joining PVP game as', username);
+      socket.emit('join_game', { username, mode: 'PVP' });
+    };
+
+    window.move = function(col){
+      if (!gameId) { console.warn('Game not started yet'); return; }
+      console.log('YOU PLAY:', col);
+      socket.emit('make_move', { gameId, column: col, username });
+    };
+  }
+
+  const candidates = [
+    (window.BACKEND_URL || BACKEND_URL) + '/socket.io/socket.io.js',
+    location.origin + '/socket.io/socket.io.js'
+  ];
+
+  (function tryLoad(i){
+    if (i >= candidates.length){
+      const alt = BACKEND_URL.replace(/^http:/,'https:') + '/socket.io/socket.io.js';
+      loadSocketIo(alt, function(err){ if (!err && typeof io === 'function') init(); else console.error('Socket.IO client could not be loaded.'); });
       return;
     }
-    console.log("YOU PLAY:", col);
-    socket.emit("make_move", {
-      gameId,
-      column: col,
-      username,
-    });
-  }
+    loadSocketIo(candidates[i], function(err){ if (!err && typeof io === 'function') init(); else tryLoad(i+1); });
+  })(0);
+})();
 </script>
+
 </body>
 </html>

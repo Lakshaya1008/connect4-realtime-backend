@@ -13,7 +13,24 @@
  */
 const BACKEND_URL = window.BACKEND_URL || "http://localhost:3000";
 
-const socket = io(BACKEND_URL);
+// Safe debug info to help confirm loader order in production builds
+try {
+  console.info("[config] BACKEND_URL:", BACKEND_URL);
+  console.info("[config] io available:", typeof io !== 'undefined' ? 'yes' : 'no');
+} catch (e) {
+  // noop in case console isn't available in some environments
+}
+
+// Initialize Socket.IO client explicitly with the backend URL and prefer websocket transport
+const socket = (typeof io !== 'undefined')
+  ? io(BACKEND_URL, { transports: ["websocket"] })
+  : null;
+
+if (!socket) {
+  // If socket is null it means the loader failed to load the Socket.IO client.
+  // The index.html loader should ensure the client script is present before app.js runs.
+  console.error('Socket.IO client not available. Ensure socket.io.js is loaded before app.js');
+}
 
 let username = null;
 let gameId = null;

@@ -62,34 +62,39 @@
   <!--
     DEPLOYMENT CONFIGURATION
     ========================
-    For production, set your backend URL here before deploying:
-    window.BACKEND_URL = "https://your-backend.onrender.com";
+    For production, set your backend URL here before deploying (or via hosting injection):
+    <script>window.BACKEND_URL = "https://your-backend.example.com";</script>
 
-    For local development, leave this commented out (defaults to localhost:3000)
+    The loader below attempts to load Socket.IO from the backend first and only
+    bootstraps `app.js` after the Socket.IO client script is available. This
+    prevents `Uncaught ReferenceError: io is not defined` when `app.js` runs.
   -->
   <script>
-    // Uncomment and edit for production:
-    // window.BACKEND_URL = "https://your-backend.onrender.com";
+    // Optional: uncomment and set for production builds if you don't inject via host
+    // window.BACKEND_URL = "https://connect4-realtime-backend.onrender.com";
 
-    // Determine backend URL (production or local)
     var backendUrl = window.BACKEND_URL || "http://localhost:3000";
-  </script>
 
-  <!-- Load Socket.IO from backend, fallback to CDN -->
-  <script>
-    // Try to load from backend first
-    var script = document.createElement('script');
-    script.src = (window.BACKEND_URL || "http://localhost:3000") + "/socket.io/socket.io.js";
-    script.onerror = function() {
-      // Fallback to CDN if backend doesn't serve Socket.IO
+    function loadApp() {
+      var s = document.createElement('script');
+      s.src = 'app.js';
+      s.defer = true;
+      document.body.appendChild(s);
+    }
+
+    // Try to load Socket.IO client from the backend (correct for hosted Socket.IO servers)
+    var sock = document.createElement('script');
+    sock.src = backendUrl + '/socket.io/socket.io.js';
+    sock.onload = loadApp;
+    sock.onerror = function() {
+      // Fallback to CDN if backend doesn't serve Socket.IO (common on static hosts)
       var fallback = document.createElement('script');
-      fallback.src = "https://cdn.socket.io/4.5.4/socket.io.min.js";
+      fallback.src = 'https://cdn.socket.io/4.5.4/socket.io.min.js';
+      fallback.onload = loadApp;
       document.head.appendChild(fallback);
     };
-    document.head.appendChild(script);
+    document.head.appendChild(sock);
   </script>
 
-  <script src="app.js"></script>
 </body>
 </html>
-
