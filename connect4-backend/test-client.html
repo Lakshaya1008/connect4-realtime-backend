@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Test</title>
+</head>
+<body>
+<h2>Connect Four - Game Mode Test</h2>
+
+<!-- Game Mode Selection -->
+<div style="margin-bottom: 20px;">
+    <h3>Start New Game:</h3>
+    <button onclick="startGame('BOT', 'EASY')">Play vs BOT (EASY)</button>
+    <button onclick="startGame('BOT', 'MEDIUM')">Play vs BOT (MEDIUM)</button>
+    <button onclick="startGame('BOT', 'HARD')">Play vs BOT (HARD)</button>
+    <button onclick="startGame('PVP')">Play vs Player (PVP)</button>
+</div>
+
+<hr>
+
+<!-- Move Buttons -->
+<div id="gameControls" style="display: none;">
+    <h3>Make Move:</h3>
+    <button onclick="move(0)">Col 0</button>
+    <button onclick="move(1)">Col 1</button>
+    <button onclick="move(2)">Col 2</button>
+    <button onclick="move(3)">Col 3</button>
+    <button onclick="move(4)">Col 4</button>
+    <button onclick="move(5)">Col 5</button>
+    <button onclick="move(6)">Col 6</button>
+</div>
+
+<script src="http://localhost:3000/socket.io/socket.io.js"></script>
+<script>
+    const socket = io("http://localhost:3000");
+    let gameId;
+    const username = "player1";
+
+    socket.on("waiting_for_opponent", () => {
+        console.log("⏳ WAITING FOR PVP OPPONENT...");
+    });
+
+    socket.on("game_start", (data) => {
+        console.log("🎮 GAME STARTED:", data.gameId);
+        console.log("Mode:", data.mode, "| Difficulty:", data.difficulty || "N/A");
+        console.table(data.board);
+        gameId = data.gameId;
+        document.getElementById("gameControls").style.display = "block";
+    });
+
+    socket.on("game_update", (data) => {
+        console.log("TURN:", data.currentTurn);
+        console.table(data.board);
+    });
+
+    socket.on("game_over", (data) => {
+        console.log("🏆 GAME OVER:", data);
+        document.getElementById("gameControls").style.display = "none";
+    });
+
+    // PHASE 5: Reconnection events
+    socket.on("game_resume", (data) => {
+        console.log("🔄 GAME RESUMED:", data.gameId);
+        console.table(data.board);
+        console.log("Current turn:", data.currentTurn);
+        gameId = data.gameId;
+        document.getElementById("gameControls").style.display = "block";
+    });
+
+    socket.on("opponent_disconnected", ({ username }) => {
+        console.log(`⚠️ ${username} disconnected. Waiting for reconnect (30s)...`);
+    });
+
+    socket.on("opponent_reconnected", ({ username }) => {
+        console.log(`✅ ${username} reconnected. Game continues!`);
+    });
+
+    // Start game with specified mode and difficulty
+    function startGame(mode, difficulty = 'MEDIUM') {
+        console.log(`Starting ${mode} game${mode === 'BOT' ? ` (${difficulty})` : ''}...`);
+        socket.emit("join_game", {
+            username,
+            mode,
+            difficulty
+        });
+    }
+
+    function move(col) {
+        console.log("YOU PLAY:", col);
+        socket.emit("make_move", {
+            gameId,
+            column: col,
+            username,
+        });
+    }
+</script>
+</body>
+</html>
+

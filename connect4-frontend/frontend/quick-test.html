@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Quick Connection Test</title>
+  <style>
+    body { font-family: Arial; max-width: 600px; margin: 50px auto; }
+    .test { padding: 15px; margin: 10px 0; border-radius: 5px; }
+    .pass { background: #d4edda; }
+    .fail { background: #f8d7da; }
+    .pending { background: #fff3cd; }
+  </style>
+</head>
+<body>
+  <h1>🔌 Quick Connection Test</h1>
+  <div id="output"></div>
+
+  <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+  <script>
+    const output = document.getElementById('output');
+
+    function addTest(name, status, message) {
+      output.innerHTML += `<div class="test ${status}">${name}: ${message}</div>`;
+    }
+
+    // Test 1: Socket.IO Library
+    if (typeof io !== 'undefined') {
+      addTest('✅ Test 1', 'pass', 'Socket.IO library loaded!');
+
+      // Test 2: Connection
+      const socket = io('http://localhost:3000');
+
+      socket.on('connect', () => {
+        addTest('✅ Test 2', 'pass', `Connected! Socket ID: ${socket.id}`);
+        console.log('Connected:', socket.id);
+
+        // Test 3: Join game
+        socket.emit('join_game', { username: 'TestUser' });
+        addTest('⏳ Test 3', 'pending', 'Sent join_game event, waiting for response...');
+      });
+
+      socket.on('waiting_for_opponent', () => {
+        addTest('✅ Test 3', 'pass', 'Received waiting_for_opponent event!');
+        console.log('Waiting for opponent');
+      });
+
+      socket.on('game_start', (data) => {
+        addTest('✅ Test 4', 'pass', `Game started! ID: ${data.gameId}`);
+        console.log('Game started:', data);
+      });
+
+      socket.on('connect_error', (error) => {
+        addTest('❌ Test 2', 'fail', `Connection error: ${error.message}`);
+        console.error('Connection error:', error);
+      });
+
+    } else {
+      addTest('❌ Test 1', 'fail', 'Socket.IO library NOT loaded! Backend might not be serving it correctly.');
+      addTest('💡 Solution', 'pending', 'Visit http://localhost:3000/socket.io/socket.io.js in your browser to check if it loads.');
+    }
+
+    // Test Leaderboard
+    fetch('http://localhost:3000/leaderboard')
+      .then(res => res.json())
+      .then(data => {
+        addTest('✅ Leaderboard', 'pass', `API works! Data: ${JSON.stringify(data)}`);
+      })
+      .catch(err => {
+        addTest('❌ Leaderboard', 'fail', `API failed: ${err.message}`);
+      });
+  </script>
+</body>
+</html>
+

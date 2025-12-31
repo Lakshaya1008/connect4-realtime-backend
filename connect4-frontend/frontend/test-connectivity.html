@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Connectivity Test - Connect4</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    .success {
+      background-color: #d4edda;
+      border-color: #c3e6cb;
+    }
+    .error {
+      background-color: #f8d7da;
+      border-color: #f5c6cb;
+    }
+    .pending {
+      background-color: #fff3cd;
+      border-color: #ffeaa7;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔌 Backend-Frontend Connectivity Test</h1>
+
+  <div id="test1" class="test-section pending">
+    <h3>Test 1: Backend API (Leaderboard)</h3>
+    <p id="test1-result">Testing...</p>
+    <button onclick="testLeaderboard()">Retry</button>
+  </div>
+
+  <div id="test2" class="test-section pending">
+    <h3>Test 2: Socket.IO Library</h3>
+    <p id="test2-result">Testing...</p>
+    <button onclick="testSocketLibrary()">Retry</button>
+  </div>
+
+  <div id="test3" class="test-section pending">
+    <h3>Test 3: Socket.IO Connection</h3>
+    <p id="test3-result">Waiting...</p>
+    <button onclick="testSocketConnection()">Retry</button>
+  </div>
+
+  <div id="test4" class="test-section pending">
+    <h3>Test 4: Join Game Event</h3>
+    <input id="testUsername" placeholder="Enter test username" value="TestUser" />
+    <button onclick="testJoinGame()">Test Join</button>
+    <p id="test4-result">Not tested yet</p>
+  </div>
+
+  <div class="test-section">
+    <h3>Console Output</h3>
+    <div id="console-output" style="background: #f5f5f5; padding: 10px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px;">
+    </div>
+  </div>
+
+  <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+  <script>
+    let socket;
+    const consoleOutput = document.getElementById('console-output');
+
+    function log(message, type = 'info') {
+      console.log(message);
+      const timestamp = new Date().toLocaleTimeString();
+      const color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+      consoleOutput.innerHTML += `<div style="color: ${color};">[${timestamp}] ${message}</div>`;
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+
+    // Test 1: Leaderboard API
+    async function testLeaderboard() {
+      const test1 = document.getElementById('test1');
+      const result1 = document.getElementById('test1-result');
+      result1.innerText = 'Testing...';
+      test1.className = 'test-section pending';
+
+      try {
+        log('Fetching http://localhost:3000/leaderboard...');
+        const res = await fetch('http://localhost:3000/leaderboard');
+        if (res.ok) {
+          const data = await res.json();
+          result1.innerText = `✅ SUCCESS! Received: ${JSON.stringify(data)}`;
+          test1.className = 'test-section success';
+          log('Leaderboard API works!', 'success');
+        } else {
+          result1.innerText = `❌ FAILED! Status: ${res.status}`;
+          test1.className = 'test-section error';
+          log(`Leaderboard API failed with status ${res.status}`, 'error');
+        }
+      } catch (error) {
+        result1.innerText = `❌ ERROR: ${error.message}`;
+        test1.className = 'test-section error';
+        log(`Leaderboard API error: ${error.message}`, 'error');
+      }
+    }
+
+    // Test 2: Socket.IO Library
+    function testSocketLibrary() {
+      const test2 = document.getElementById('test2');
+      const result2 = document.getElementById('test2-result');
+
+      if (typeof io !== 'undefined') {
+        result2.innerText = '✅ Socket.IO library loaded successfully!';
+        test2.className = 'test-section success';
+        log('Socket.IO library is available', 'success');
+      } else {
+        result2.innerText = '❌ Socket.IO library NOT loaded! Check if backend is running on port 3000.';
+        test2.className = 'test-section error';
+        log('Socket.IO library not found', 'error');
+      }
+    }
+
+    // Test 3: Socket.IO Connection
+    function testSocketConnection() {
+      const test3 = document.getElementById('test3');
+      const result3 = document.getElementById('test3-result');
+
+      if (typeof io === 'undefined') {
+        result3.innerText = '❌ Cannot test - Socket.IO library not loaded';
+        test3.className = 'test-section error';
+        return;
+      }
+
+      result3.innerText = 'Connecting...';
+      test3.className = 'test-section pending';
+      log('Attempting to connect to http://localhost:3000...');
+
+      socket = io('http://localhost:3000');
+
+      socket.on('connect', () => {
+        result3.innerText = `✅ Connected! Socket ID: ${socket.id}`;
+        test3.className = 'test-section success';
+        log(`Connected with socket ID: ${socket.id}`, 'success');
+      });
+
+      socket.on('connect_error', (error) => {
+        result3.innerText = `❌ Connection failed: ${error.message}`;
+        test3.className = 'test-section error';
+        log(`Connection error: ${error.message}`, 'error');
+      });
+
+      socket.on('disconnect', () => {
+        result3.innerText = '⚠️ Disconnected from server';
+        test3.className = 'test-section pending';
+        log('Disconnected from server', 'error');
+      });
+
+      // Listen to all events
+      socket.onAny((eventName, ...args) => {
+        log(`📡 Event: ${eventName} - ${JSON.stringify(args)}`);
+      });
+    }
+
+    // Test 4: Join Game
+    function testJoinGame() {
+      const test4 = document.getElementById('test4');
+      const result4 = document.getElementById('test4-result');
+      const username = document.getElementById('testUsername').value.trim();
+
+      if (!socket || !socket.connected) {
+        result4.innerText = '❌ Not connected! Run Test 3 first.';
+        test4.className = 'test-section error';
+        return;
+      }
+
+      if (!username) {
+        result4.innerText = '❌ Enter a username first';
+        return;
+      }
+
+      result4.innerText = 'Sending join_game event...';
+      test4.className = 'test-section pending';
+      log(`Sending join_game with username: ${username}`);
+
+      socket.emit('join_game', { username });
+
+      socket.once('waiting_for_opponent', () => {
+        result4.innerText = '✅ SUCCESS! Received waiting_for_opponent event';
+        test4.className = 'test-section success';
+        log('Received waiting_for_opponent event', 'success');
+      });
+
+      socket.once('game_start', (data) => {
+        result4.innerText = `✅ SUCCESS! Game started: ${data.gameId}`;
+        test4.className = 'test-section success';
+        log(`Game started: ${JSON.stringify(data)}`, 'success');
+      });
+
+      setTimeout(() => {
+        if (test4.className === 'test-section pending') {
+          result4.innerText = '⚠️ No response received after 3 seconds';
+          log('No response to join_game event', 'error');
+        }
+      }, 3000);
+    }
+
+    // Auto-run tests on load
+    window.onload = () => {
+      log('Starting connectivity tests...');
+      setTimeout(testLeaderboard, 500);
+      setTimeout(testSocketLibrary, 1000);
+      setTimeout(testSocketConnection, 1500);
+    };
+  </script>
+</body>
+</html>
+

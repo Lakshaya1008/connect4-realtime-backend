@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect 4 - Multiplayer Game</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1>🎮 Connect 4</h1>
+
+  <div id="join">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+      <label for="username" class="sr-only">Username</label>
+      <input id="username" placeholder="Enter your username" autocomplete="off" />
+
+      <!-- Game Mode Selection -->
+      <div class="mode-selection">
+        <label class="mode-option">
+          <input type="radio" name="gameMode" value="PVP" checked />
+          <span>👥 Play vs Player</span>
+        </label>
+        <label class="mode-option">
+          <input type="radio" name="gameMode" value="BOT" />
+          <span>🤖 Play vs Bot</span>
+        </label>
+      </div>
+
+      <!-- Difficulty Selector (shown only when BOT mode selected) -->
+      <div id="difficulty-selector" class="difficulty-selector" style="display: none;">
+        <label for="difficulty">Bot Difficulty:</label>
+        <select id="difficulty">
+          <option value="EASY">Easy</option>
+          <option value="MEDIUM" selected>Medium</option>
+          <option value="HARD">Hard</option>
+        </select>
+      </div>
+
+      <button id="joinBtn">Join Game</button>
+    </div>
+  </div>
+
+  <div id="player-legend" class="player-legend">
+    <div class="player-info" id="player1-info">
+      <span class="player-indicator player1-indicator"></span>
+      <span id="player1-name">Player 1</span>
+    </div>
+    <div class="vs-divider">VS</div>
+    <div class="player-info" id="player2-info">
+      <span class="player-indicator player2-indicator"></span>
+      <span id="player2-name">Player 2</span>
+    </div>
+  </div>
+
+  <p id="status">Ready to play!</p>
+
+  <div id="board" class="board"></div>
+
+  <h2>🏆 Leaderboard</h2>
+  <ul id="leaderboard"></ul>
+
+  <!--
+    DEPLOYMENT CONFIGURATION
+    ========================
+    For production, set your backend URL here before deploying:
+    window.BACKEND_URL = "https://your-backend.onrender.com";
+
+    For local development, leave this commented out (defaults to localhost:3000)
+  -->
+  <script>
+    // Uncomment and edit for production:
+    // window.BACKEND_URL = "https://your-backend.onrender.com";
+
+    // Determine backend URL (production or local)
+    var backendUrl = window.BACKEND_URL || "http://localhost:3000";
+  </script>
+
+  <!-- Load Socket.IO from backend, fallback to CDN -->
+  <script>
+    // Try to load from backend first
+    var script = document.createElement('script');
+    script.src = (window.BACKEND_URL || "http://localhost:3000") + "/socket.io/socket.io.js";
+    script.onerror = function() {
+      // Fallback to CDN if backend doesn't serve Socket.IO
+      var fallback = document.createElement('script');
+      fallback.src = "https://cdn.socket.io/4.5.4/socket.io.min.js";
+      document.head.appendChild(fallback);
+    };
+    document.head.appendChild(script);
+  </script>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
