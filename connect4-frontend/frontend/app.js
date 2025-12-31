@@ -1,3 +1,10 @@
+console.log("BACKEND_URL:", window.BACKEND_URL);
+console.log("io exists:", typeof io);
+
+const socket = io(window.BACKEND_URL, {
+  transports: ["websocket"],
+});
+
 /**
  * BACKEND URL CONFIGURATION
  * -------------------------
