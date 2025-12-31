@@ -3,27 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Connect 4 - Multiplayer Game</title>
+  <title>Connect 4</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
 <h1>🎮 Connect 4</h1>
 
-<div id="join">
+<section id="join">
   <input id="username" placeholder="Enter your username" autocomplete="off" />
 
   <div class="mode-selection">
-    <label>
+    <label class="mode-option">
       <input type="radio" name="gameMode" value="PVP" checked />
-      👥 Play vs Player
+      <span>👥 Play vs Player</span>
     </label>
-    <label>
+
+    <label class="mode-option">
       <input type="radio" name="gameMode" value="BOT" />
-      🤖 Play vs Bot
+      <span>🤖 Play vs Bot</span>
     </label>
   </div>
 
-  <div id="difficulty-selector" style="display:none;">
+  <div id="difficulty-selector" class="difficulty-selector">
+    <label>Bot difficulty</label>
     <select id="difficulty">
       <option value="EASY">Easy</option>
       <option value="MEDIUM" selected>Medium</option>
@@ -32,23 +35,21 @@
   </div>
 
   <button id="joinBtn">Join Game</button>
-</div>
+</section>
 
 <p id="status">Ready to play!</p>
+
 <div id="board" class="board"></div>
 
 <h2>🏆 Leaderboard</h2>
 <ul id="leaderboard"></ul>
 
-<!-- ✅ Runtime backend config -->
+<!-- Backend config -->
 <script>
   window.BACKEND_URL = "https://connect4-realtime-backend.onrender.com";
 </script>
 
-<!-- ✅ Socket.IO client (MUST load before app.js) -->
 <script src="https://connect4-realtime-backend.onrender.com/socket.io/socket.io.js"></script>
-
-<!-- ✅ Your app -->
 <script src="app.js"></script>
 </body>
 </html>
