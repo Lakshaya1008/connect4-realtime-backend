@@ -106,11 +106,30 @@ module.exports = function setupGameSocket(io) {
         return;
       }
 
-      console.log(`${username} wants to join a ${mode} game${mode === 'BOT' ? ` (difficulty: ${difficulty})` : ''}`);
+      // Trim and validate username
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername) {
+        socket.emit('error', 'Username required');
+        return;
+      }
+
+      console.log(`${trimmedUsername} wants to join a ${mode} game${mode === 'BOT' ? ` (difficulty: ${difficulty})` : ''}`);
+
+      // FIX: Check if username is already waiting in PVP queue
+      // This prevents the "dddddd VS dddddd" race condition
+      const waitingPlayer = getWaitingPlayer();
+      if (waitingPlayer && waitingPlayer.username.toLowerCase() === trimmedUsername.toLowerCase()) {
+        console.log(`[REJECT] Username ${trimmedUsername} is already waiting in PVP queue`);
+        socket.emit('join_error', {
+          code: 'USERNAME_IN_USE',
+          message: 'Username already in use in another session'
+        });
+        return;
+      }
 
       // PHASE 5: RECONNECTION CHECK
-      if (players.has(username)) {
-        const player = players.get(username);
+      if (players.has(trimmedUsername)) {
+        const player = players.get(trimmedUsername);
 
         // Player was in a game and disconnected
         if (player.disconnectedAt && player.gameId) {
@@ -121,7 +140,7 @@ module.exports = function setupGameSocket(io) {
             if (reconnectTimers.has(player.gameId)) {
               clearTimeout(reconnectTimers.get(player.gameId));
               reconnectTimers.delete(player.gameId);
-              console.log(`Reconnect timer cancelled for ${username}`);
+              console.log(`Reconnect timer cancelled for ${trimmedUsername}`);
             }
 
             // Rebind socket
@@ -129,7 +148,7 @@ module.exports = function setupGameSocket(io) {
             player.disconnectedAt = null;
 
             // Update game socket mapping
-            game.sockets[username] = socket.id;
+            game.sockets[trimmedUsername] = socket.id;
             socket.join(player.gameId);
 
             // FIX #1: Normalize game_resume payload to include mode and difficulty
@@ -137,10 +156,10 @@ module.exports = function setupGameSocket(io) {
 
             // Notify opponent
             socket.to(player.gameId).emit('opponent_reconnected', {
-              username,
+              username: trimmedUsername,
             });
 
-            console.log(`${username} reconnected to game ${player.gameId}`);
+            console.log(`${trimmedUsername} reconnected to game ${player.gameId}`);
             return; // 🔴 STOP. Do NOT create a new game
           }
         }
@@ -150,7 +169,7 @@ module.exports = function setupGameSocket(io) {
         if (!player.disconnectedAt && player.gameId) {
           const existingGame = activeGames.get(player.gameId);
           if (existingGame && existingGame.status === 'ACTIVE') {
-            console.log(`[REJECT] Username ${username} already in active game ${player.gameId}`);
+            console.log(`[REJECT] Username ${trimmedUsername} already in active game ${player.gameId}`);
             socket.emit('join_error', {
               code: 'USERNAME_IN_USE',
               message: 'Username already in use in another session'
@@ -163,14 +182,14 @@ module.exports = function setupGameSocket(io) {
       // BOT MODE: Start game immediately with bot opponent
       if (mode === 'BOT') {
         const game = createGame(
-          { username, socketId: socket.id },
+          { username: trimmedUsername, socketId: socket.id },
           { username: 'BOT', socketId: 'BOT' },
           'BOT',
           difficulty
         );
 
         // Register human player (bot doesn't need tracking)
-        players.set(username, {
+        players.set(trimmedUsername, {
           socketId: socket.id,
           gameId: game.gameId,
           disconnectedAt: null,
@@ -186,41 +205,52 @@ module.exports = function setupGameSocket(io) {
       }
 
       // PVP MODE: Match with another waiting player
-      const waitingPlayer = getWaitingPlayer();
+      // Note: We already checked for duplicate username with waiting player at the top
+      const currentWaitingPlayer = getWaitingPlayer();
 
       // FIX #4: Check if waiting player's socket is still connected
       // Prevent matching with disconnected sockets
-      if (waitingPlayer) {
-        const waitingSocket = io.sockets.sockets.get(waitingPlayer.socketId);
+      if (currentWaitingPlayer) {
+        const waitingSocket = io.sockets.sockets.get(currentWaitingPlayer.socketId);
         if (!waitingSocket || !waitingSocket.connected) {
           // FIX #4: Waiting player disconnected, clear and continue
-          console.log(`[FIX #4] Waiting player ${waitingPlayer.username} disconnected, clearing queue`);
+          console.log(`[FIX #4] Waiting player ${currentWaitingPlayer.username} disconnected, clearing queue`);
           clearWaitingPlayer();
         }
       }
 
       // Re-check after potential cleanup
-      const currentWaitingPlayer = getWaitingPlayer();
+      const validWaitingPlayer = getWaitingPlayer();
 
       // CASE 1: Someone is already waiting → start PVP game
-      if (currentWaitingPlayer) {
+      if (validWaitingPlayer) {
+        // Double-check: prevent same username match (case-insensitive)
+        if (validWaitingPlayer.username.toLowerCase() === trimmedUsername.toLowerCase()) {
+          console.log(`[REJECT] Username ${trimmedUsername} tried to match with themselves`);
+          socket.emit('join_error', {
+            code: 'USERNAME_IN_USE',
+            message: 'Username already in use in another session'
+          });
+          return;
+        }
+
         clearWaitingPlayer();
 
         const game = createGame(
-          currentWaitingPlayer,
-          { username, socketId: socket.id },
+          validWaitingPlayer,
+          { username: trimmedUsername, socketId: socket.id },
           'PVP',
           null  // no difficulty for PVP
         );
 
         // Register both players
-        players.set(currentWaitingPlayer.username, {
-          socketId: currentWaitingPlayer.socketId,
+        players.set(validWaitingPlayer.username, {
+          socketId: validWaitingPlayer.socketId,
           gameId: game.gameId,
           disconnectedAt: null,
         });
 
-        players.set(username, {
+        players.set(trimmedUsername, {
           socketId: socket.id,
           gameId: game.gameId,
           disconnectedAt: null,
@@ -228,7 +258,7 @@ module.exports = function setupGameSocket(io) {
 
         // join sockets to room
         socket.join(game.gameId);
-        io.to(currentWaitingPlayer.socketId).socketsJoin(game.gameId);
+        io.to(validWaitingPlayer.socketId).socketsJoin(game.gameId);
 
         // FIX #1: Normalize game_start payload (includes mode, difficulty=null for PVP)
         io.to(game.gameId).emit('game_start', buildGamePayload(game));
@@ -237,11 +267,11 @@ module.exports = function setupGameSocket(io) {
       }
       // CASE 2: No one waiting → put this player in queue (PVP only)
       else {
-        setWaitingPlayer({ username, socketId: socket.id });
+        setWaitingPlayer({ username: trimmedUsername, socketId: socket.id });
 
         socket.emit('waiting_for_opponent');
 
-        console.log(`${username} is waiting for PVP opponent`);
+        console.log(`${trimmedUsername} is waiting for PVP opponent`);
       }
     });
 
