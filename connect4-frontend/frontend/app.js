@@ -23,26 +23,17 @@ console.log("Socket.IO client loaded:", typeof io === "function");
 console.groupEnd();
 
 socket.on("connect", () => {
-  console.log(
-      "%c✅ Backend connected successfully",
-      "color:#22c55e;font-weight:bold"
-  );
+  console.log("%c✅ Backend connected", "color:#22c55e;font-weight:bold");
   console.log("Socket ID:", socket.id);
 });
 
 socket.on("connect_error", err => {
-  console.error(
-      "%c❌ Backend connection failed",
-      "color:#ef4444;font-weight:bold"
-  );
+  console.error("%c❌ Backend connection failed", "color:#ef4444;font-weight:bold");
   console.error("Reason:", err.message);
 });
 
 socket.on("disconnect", reason => {
-  console.warn(
-      "%c⚠️ Backend disconnected",
-      "color:#f59e0b;font-weight:bold"
-  );
+  console.warn("%c⚠️ Backend disconnected", "color:#f59e0b;font-weight:bold");
   console.warn("Reason:", reason);
 });
 
@@ -211,18 +202,67 @@ function renderBoard(board) {
 }
 
 /* ================================
-   SOCKET EVENTS (FIXED)
+   GAME OVER MODAL (RESTORED)
+   ================================ */
+function showGameOverModal(result, title, subtitle) {
+  const old = document.querySelector(".game-over-modal");
+  if (old) old.remove();
+
+  const overlay = document.createElement("div");
+  overlay.className = "game-over-modal show";
+
+  const modal = document.createElement("div");
+  modal.className = `modal-content modal-${result}`;
+
+  modal.innerHTML = `
+    <div class="modal-icon">
+      ${result === "win" ? "🏆" : result === "lose" ? "😔" : "🤝"}
+    </div>
+    <h2 class="modal-title">${title}</h2>
+    <p class="modal-subtitle">${subtitle}</p>
+    <button class="modal-btn" id="playAgainBtn">Play Again</button>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  document.getElementById("playAgainBtn").onclick = () => {
+    overlay.remove();
+    restartSameMode();
+  };
+}
+
+function restartSameMode() {
+  gameId = null;
+  gameActive = false;
+  isMyTurn = false;
+
+  boardDiv.innerHTML = "";
+  playerLegend.style.display = "none";
+
+  const payload = { username, mode: selectedMode };
+  if (selectedMode === "BOT") payload.difficulty = selectedDifficulty;
+
+  updateStatus(
+      selectedMode === "BOT"
+          ? `⏳ Starting bot (${selectedDifficulty})...`
+          : "⏳ Finding opponent...",
+      "waiting"
+  );
+
+  socket.emit("join_game", payload);
+}
+
+/* ================================
+   SOCKET EVENTS
    ================================ */
 socket.on("game_start", data => {
-  console.log("🎮 game_start payload:", data);
-
   gameId = data.gameId;
   currentTurn = data.currentTurn;
   gameActive = true;
 
   joinSection.style.display = "none";
 
-  // ✅ SAFE NAME RESOLUTION (ROOT FIX)
   if (data.player1) {
     player1Name = data.player1;
     player2Name = data.player2 || "BOT";
@@ -230,8 +270,8 @@ socket.on("game_start", data => {
     player1Name = data.players[0];
     player2Name = data.players[1] || "BOT";
   } else {
-    player1Name = username;
-    player2Name = "BOT";
+    console.error("❌ Invalid game_start payload", data);
+    return;
   }
 
   myRole = username === player1Name ? "player1" : "player2";
@@ -253,11 +293,32 @@ socket.on("game_over", data => {
   gameActive = false;
   isMyTurn = false;
 
-  if (data.winner === username) updateStatus("🎉 You Win!", "winner");
-  else if (data.winner) updateStatus(`${data.winner} Wins`, "loser");
-  else updateStatus("🤝 Draw", "draw");
+  let result = "draw";
+  let title = "🤝 It's a Draw!";
+  let subtitle = "Well played!";
+
+  if (data.winner) {
+    if (data.winner === username) {
+      result = "win";
+      title = "🎉 You Win!";
+      subtitle = "Great game!";
+      updateStatus("🎉 You Win!", "winner");
+    } else {
+      result = "lose";
+      title = "Game Over";
+      subtitle = `${data.winner} wins`;
+      updateStatus("❌ You Lose", "loser");
+    }
+  } else {
+    updateStatus("🤝 Draw", "draw");
+  }
 
   renderBoard(data.board);
+
+  setTimeout(() => {
+    showGameOverModal(result, title, subtitle);
+  }, 600);
+
   loadLeaderboard();
 });
 
