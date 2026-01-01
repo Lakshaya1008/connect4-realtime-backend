@@ -1,84 +1,91 @@
-/* =======================
-   CONFIG + SOCKET INIT
-======================= */
-
+/**
+ * BACKEND URL CONFIGURATION
+ */
 const BACKEND_URL = window.BACKEND_URL || "http://localhost:3000";
 
-console.info("[config] BACKEND_URL:", BACKEND_URL);
-console.info("[config] io available:", typeof io !== "undefined");
-
+/**
+ * SAFETY CHECK — DO NOT REMOVE
+ * This protects against Render / slow network issues
+ */
 if (typeof io === "undefined") {
-  console.error("❌ Socket.IO client not loaded");
+  console.error("❌ Socket.IO client not loaded. Check script order in index.html");
+  alert("Failed to load Socket.IO. Please refresh.");
+  throw new Error("Socket.IO missing");
 }
 
-const socket = io(BACKEND_URL, {
-  transports: ["websocket"],
-});
-
-/* =======================
-   GLOBAL STATE
-======================= */
+const socket = io(BACKEND_URL, { transports: ["websocket"] });
 
 let username = null;
 let gameId = null;
 let currentTurn = null;
 let player1Name = null;
 let player2Name = null;
+let myRole = null;
 let gameActive = false;
 let isMyTurn = false;
 let selectedMode = "PVP";
 let selectedDifficulty = "MEDIUM";
 
-/* =======================
-   DOM REFERENCES
-======================= */
+const DEBUG = false;
+if (DEBUG) {
+  socket.onAny((event, ...args) => {
+    console.log(`📡 ${event}`, args);
+  });
+}
 
+/* DOM refs */
 const boardDiv = document.getElementById("board");
 const statusP = document.getElementById("status");
 const joinBtn = document.getElementById("joinBtn");
 const usernameInput = document.getElementById("username");
 const leaderboardUl = document.getElementById("leaderboard");
+const playerLegend = document.getElementById("player-legend");
+const player1NameSpan = document.getElementById("player1-name");
+const player2NameSpan = document.getElementById("player2-name");
 const joinSection = document.getElementById("join");
 const difficultySelector = document.getElementById("difficulty-selector");
 const difficultySelect = document.getElementById("difficulty");
 const gameModeRadios = document.querySelectorAll('input[name="gameMode"]');
-const playerLegend = document.getElementById("player-legend");
-const player1NameSpan = document.getElementById("player1-name");
-const player2NameSpan = document.getElementById("player2-name");
 
-/* =======================
-   TOAST SYSTEM (UNCHANGED)
-======================= */
+/* -------- UI HELPERS -------- */
+
+function updateStatus(message, type = "default") {
+  statusP.innerText = message;
+  statusP.className = "status-" + type;
+}
 
 function showToast(message, type = "warning") {
-  const existing = document.querySelector(".toast");
-  if (existing) existing.remove();
+  const old = document.querySelector(".toast");
+  if (old) old.remove();
 
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.innerText = message;
-
   document.body.appendChild(toast);
-  setTimeout(() => toast.classList.add("show"), 10);
 
+  setTimeout(() => toast.classList.add("show"), 10);
   setTimeout(() => {
     toast.classList.remove("show");
     setTimeout(() => toast.remove(), 300);
   }, 2500);
 }
 
-/* =======================
-   STATUS
-======================= */
+function updatePlayerLegend(p1, p2) {
+  player1Name = p1;
+  player2Name = p2;
+  player1NameSpan.innerText = p1;
+  player2NameSpan.innerText = p2;
 
-function updateStatus(message, type = "default") {
-  statusP.innerText = message;
-  statusP.className = `status-${type}`;
+  const indicator = document.querySelector("#player2-info .player-indicator");
+  indicator.className =
+      p2 === "BOT"
+          ? "player-indicator bot-indicator"
+          : "player-indicator player2-indicator";
+
+  playerLegend.style.display = "flex";
 }
 
-/* =======================
-   GAME MODE HANDLING
-======================= */
+/* -------- MODE / DIFFICULTY -------- */
 
 gameModeRadios.forEach(radio => {
   radio.addEventListener("change", e => {
@@ -88,27 +95,30 @@ gameModeRadios.forEach(radio => {
   });
 });
 
-difficultySelect.addEventListener("change", e => {
+difficultySelect?.addEventListener("change", e => {
   selectedDifficulty = e.target.value;
 });
 
-/* =======================
-   JOIN GAME
-======================= */
+/* -------- JOIN GAME -------- */
 
 joinBtn.onclick = () => {
-  username = usernameInput.value.trim();
-  if (!username) {
-    showToast("Username required", "error");
+  if (joinBtn.disabled) return;
+
+  const name = usernameInput.value.trim();
+  if (name.length < 2) {
+    showToast("Username too short", "error");
     return;
   }
+
+  username = name;
+  joinBtn.disabled = true;
 
   const payload = { username, mode: selectedMode };
   if (selectedMode === "BOT") payload.difficulty = selectedDifficulty;
 
   updateStatus(
       selectedMode === "BOT"
-          ? `🤖 Starting bot (${selectedDifficulty})...`
+          ? `⏳ Starting bot (${selectedDifficulty})...`
           : "⏳ Waiting for opponent...",
       "waiting"
   );
@@ -116,26 +126,27 @@ joinBtn.onclick = () => {
   socket.emit("join_game", payload);
 };
 
-/* =======================
-   RENDER BOARD
-======================= */
+/* -------- BOARD RENDER -------- */
 
 function renderBoard(board) {
   boardDiv.innerHTML = "";
+
+  boardDiv.classList.toggle("board-disabled", !gameActive);
+  boardDiv.classList.toggle("board-waiting", gameActive && !isMyTurn);
 
   board.forEach(row => {
     row.forEach((cell, col) => {
       const div = document.createElement("div");
       div.className = "cell";
 
-      if (cell === player1Name) div.classList.add("player1");
-      if (cell === player2Name) div.classList.add("player2");
       if (cell === "BOT") div.classList.add("BOT");
+      else if (cell === player1Name) div.classList.add("player1");
+      else if (cell === player2Name) div.classList.add("player2");
 
-      /* ===== PERFECT UX CLICK HANDLING ===== */
       div.onclick = () => {
+        /* 🔥 PERFECT UX — AS YOU REQUESTED */
         if (!gameActive) {
-          showToast("⏳ Game has not started yet", "info");
+          showToast("⏳ Game has not started", "info");
           return;
         }
 
@@ -147,17 +158,13 @@ function renderBoard(board) {
         }
 
         if (cell) {
-          showToast("❌ This slot is already filled", "error");
+          showToast("❌ Slot already filled", "error");
           div.classList.add("invalid-click");
           setTimeout(() => div.classList.remove("invalid-click"), 300);
           return;
         }
 
-        socket.emit("make_move", {
-          gameId,
-          column: col,
-          username,
-        });
+        socket.emit("make_move", { gameId, column: col, username });
       };
 
       boardDiv.appendChild(div);
@@ -165,41 +172,30 @@ function renderBoard(board) {
   });
 }
 
-/* =======================
-   SOCKET EVENTS
-======================= */
-
-socket.on("waiting_for_opponent", () => {
-  gameActive = false;
-  updateStatus("⏳ Waiting for opponent...", "waiting");
-});
+/* -------- SOCKET EVENTS -------- */
 
 socket.on("game_start", data => {
   gameId = data.gameId;
-  player1Name = data.player1;
-  player2Name = data.player2 || "BOT";
   currentTurn = data.currentTurn;
   gameActive = true;
-  isMyTurn = currentTurn === username;
 
   joinSection.style.display = "none";
-  playerLegend.style.display = "flex";
-  player1NameSpan.innerText = player1Name;
-  player2NameSpan.innerText = player2Name;
 
-  updateStatus(isMyTurn ? "🟢 Your Turn" : "⏳ Opponent Turn", isMyTurn ? "your-turn" : "waiting");
+  player1Name = data.player1;
+  player2Name = data.player2 || "BOT";
+
+  myRole = username === player1Name ? "player1" : "player2";
+  isMyTurn = currentTurn === username;
+
+  updatePlayerLegend(player1Name, player2Name);
+  updateStatus(isMyTurn ? "🟢 Your Turn" : "⏳ Waiting...", "waiting");
   renderBoard(data.board);
 });
 
 socket.on("game_update", data => {
   currentTurn = data.currentTurn;
   isMyTurn = currentTurn === username;
-
-  updateStatus(
-      isMyTurn ? "🟢 Your Turn" : `⏳ ${currentTurn}'s Turn`,
-      isMyTurn ? "your-turn" : "waiting"
-  );
-
+  updateStatus(isMyTurn ? "🟢 Your Turn" : "⏳ Waiting...", "waiting");
   renderBoard(data.board);
 });
 
@@ -207,27 +203,20 @@ socket.on("game_over", data => {
   gameActive = false;
   isMyTurn = false;
 
-  if (data.winner === username) {
-    updateStatus("🎉 YOU WIN!", "winner");
-  } else if (data.winner) {
-    updateStatus(`${data.winner} wins`, "loser");
-  } else {
-    updateStatus("🤝 Draw", "draw");
-  }
+  if (data.winner === username) updateStatus("🎉 You Win!", "winner");
+  else if (data.winner) updateStatus(`${data.winner} Wins`, "loser");
+  else updateStatus("🤝 Draw", "draw");
 
   renderBoard(data.board);
   loadLeaderboard();
 });
 
-/* =======================
-   LEADERBOARD
-======================= */
+/* -------- LEADERBOARD -------- */
 
 async function loadLeaderboard() {
   try {
     const res = await fetch(`${BACKEND_URL}/leaderboard`);
     const data = await res.json();
-
     leaderboardUl.innerHTML = "";
 
     if (!data.length) {
@@ -237,7 +226,11 @@ async function loadLeaderboard() {
 
     data.forEach((p, i) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>${i + 1}</span> ${p.username} — ${p.wins} wins`;
+      li.innerHTML = `
+        <span class="rank">${i + 1}</span>
+        <span class="lb-name">${p.username}</span>
+        <span class="lb-wins">${p.wins} wins</span>
+      `;
       leaderboardUl.appendChild(li);
     });
   } catch {}
