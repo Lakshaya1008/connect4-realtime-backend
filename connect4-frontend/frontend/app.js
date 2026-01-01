@@ -138,11 +138,25 @@ joinBtn.onclick = () => {
   const name = usernameInput.value.trim();
   if (name.length < 2) {
     showToast("Username too short", "error");
+    usernameInput.classList.add("input-error");
+    return;
+  }
+
+  // Prevent joining if already in an active game
+  if (gameActive && gameId) {
+    showToast("⚠️ You're already in a game!", "warning");
+    return;
+  }
+
+  // Prevent joining with same username if game just started (same session)
+  if (username && username === name && gameActive) {
+    showToast("⚠️ You're already playing as " + name, "warning");
     return;
   }
 
   username = name;
   joinBtn.disabled = true;
+  joinBtn.innerText = "Joining...";
 
   const payload = { username, mode: selectedMode };
   if (selectedMode === "BOT") payload.difficulty = selectedDifficulty;
@@ -416,11 +430,38 @@ socket.on("error", message => {
 /** Contract: join_error — { code: string, message: string } */
 socket.on("join_error", data => {
   if (data && data.message) {
+    // Show error toast
     showToast(`❌ ${data.message}`, "error");
     console.error("Join error:", data.code, data.message);
+
+    // Show specific message for duplicate username
+    if (data.code === "USERNAME_IN_USE") {
+      updateStatus("⚠️ Username already taken. Choose another.", "error");
+
+      // Clear the username so they can't use it
+      const blockedName = usernameInput.value;
+      usernameInput.value = "";
+      usernameInput.placeholder = `"${blockedName}" is taken - try another`;
+
+      // Highlight input field
+      usernameInput.classList.add("input-error");
+      usernameInput.focus();
+
+      // Remove error highlight when user types
+      usernameInput.addEventListener("input", function removeError() {
+        usernameInput.classList.remove("input-error");
+        usernameInput.placeholder = "Enter your username";
+        usernameInput.removeEventListener("input", removeError);
+      });
+
+      // Reset username variable so they must enter new one
+      username = null;
+    }
   }
-  // Re-enable join button
+  // Re-enable join button and form
   joinBtn.disabled = false;
+  joinBtn.innerText = "Join Game";
+  joinSection.style.display = "block";
 });
 
 /* ================================
