@@ -5,7 +5,6 @@ const BACKEND_URL = window.BACKEND_URL || "http://localhost:3000";
 
 /**
  * SAFETY CHECK — DO NOT REMOVE
- * This protects against Render / slow network issues
  */
 if (typeof io === "undefined") {
   console.error("❌ Socket.IO client not loaded. Check script order in index.html");
@@ -15,6 +14,48 @@ if (typeof io === "undefined") {
 
 const socket = io(BACKEND_URL, { transports: ["websocket"] });
 
+/* ================================
+   🔌 BACKEND CONNECTION DIAGNOSTICS
+   ================================ */
+console.group("🔍 Backend Connection Diagnostics");
+console.log("BACKEND_URL:", BACKEND_URL);
+console.log("Socket.IO client loaded:", typeof io === "function");
+console.groupEnd();
+
+socket.on("connect", () => {
+  console.log(
+      "%c✅ Backend connected successfully",
+      "color:#22c55e;font-weight:bold"
+  );
+  console.log("Socket ID:", socket.id);
+});
+
+socket.on("connect_error", err => {
+  console.error(
+      "%c❌ Backend connection failed",
+      "color:#ef4444;font-weight:bold"
+  );
+  console.error("Reason:", err.message);
+});
+
+socket.on("disconnect", reason => {
+  console.warn(
+      "%c⚠️ Backend disconnected",
+      "color:#f59e0b;font-weight:bold"
+  );
+  console.warn("Reason:", reason);
+});
+
+socket.io.on("reconnect", attempt => {
+  console.log(
+      `%c🔄 Reconnected (attempt ${attempt})`,
+      "color:#3b82f6;font-weight:bold"
+  );
+});
+
+/* ================================
+   GAME STATE
+   ================================ */
 let username = null;
 let gameId = null;
 let currentTurn = null;
@@ -26,14 +67,9 @@ let isMyTurn = false;
 let selectedMode = "PVP";
 let selectedDifficulty = "MEDIUM";
 
-const DEBUG = false;
-if (DEBUG) {
-  socket.onAny((event, ...args) => {
-    console.log(`📡 ${event}`, args);
-  });
-}
-
-/* DOM refs */
+/* ================================
+   DOM REFERENCES
+   ================================ */
 const boardDiv = document.getElementById("board");
 const statusP = document.getElementById("status");
 const joinBtn = document.getElementById("joinBtn");
@@ -47,8 +83,9 @@ const difficultySelector = document.getElementById("difficulty-selector");
 const difficultySelect = document.getElementById("difficulty");
 const gameModeRadios = document.querySelectorAll('input[name="gameMode"]');
 
-/* -------- UI HELPERS -------- */
-
+/* ================================
+   UI HELPERS
+   ================================ */
 function updateStatus(message, type = "default") {
   statusP.innerText = message;
   statusP.className = "status-" + type;
@@ -73,6 +110,7 @@ function showToast(message, type = "warning") {
 function updatePlayerLegend(p1, p2) {
   player1Name = p1;
   player2Name = p2;
+
   player1NameSpan.innerText = p1;
   player2NameSpan.innerText = p2;
 
@@ -85,8 +123,9 @@ function updatePlayerLegend(p1, p2) {
   playerLegend.style.display = "flex";
 }
 
-/* -------- MODE / DIFFICULTY -------- */
-
+/* ================================
+   MODE / DIFFICULTY
+   ================================ */
 gameModeRadios.forEach(radio => {
   radio.addEventListener("change", e => {
     selectedMode = e.target.value;
@@ -99,8 +138,9 @@ difficultySelect?.addEventListener("change", e => {
   selectedDifficulty = e.target.value;
 });
 
-/* -------- JOIN GAME -------- */
-
+/* ================================
+   JOIN GAME
+   ================================ */
 joinBtn.onclick = () => {
   if (joinBtn.disabled) return;
 
@@ -126,8 +166,9 @@ joinBtn.onclick = () => {
   socket.emit("join_game", payload);
 };
 
-/* -------- BOARD RENDER -------- */
-
+/* ================================
+   BOARD RENDER
+   ================================ */
 function renderBoard(board) {
   boardDiv.innerHTML = "";
 
@@ -144,19 +185,16 @@ function renderBoard(board) {
       else if (cell === player2Name) div.classList.add("player2");
 
       div.onclick = () => {
-        /* 🔥 PERFECT UX — AS YOU REQUESTED */
         if (!gameActive) {
           showToast("⏳ Game has not started", "info");
           return;
         }
-
         if (!isMyTurn) {
           showToast("⛔ Not your turn", "warning");
           div.classList.add("invalid-click");
           setTimeout(() => div.classList.remove("invalid-click"), 300);
           return;
         }
-
         if (cell) {
           showToast("❌ Slot already filled", "error");
           div.classList.add("invalid-click");
@@ -172,17 +210,29 @@ function renderBoard(board) {
   });
 }
 
-/* -------- SOCKET EVENTS -------- */
-
+/* ================================
+   SOCKET EVENTS (FIXED)
+   ================================ */
 socket.on("game_start", data => {
+  console.log("🎮 game_start payload:", data);
+
   gameId = data.gameId;
   currentTurn = data.currentTurn;
   gameActive = true;
 
   joinSection.style.display = "none";
 
-  player1Name = data.player1;
-  player2Name = data.player2 || "BOT";
+  // ✅ SAFE NAME RESOLUTION (ROOT FIX)
+  if (data.player1) {
+    player1Name = data.player1;
+    player2Name = data.player2 || "BOT";
+  } else if (Array.isArray(data.players)) {
+    player1Name = data.players[0];
+    player2Name = data.players[1] || "BOT";
+  } else {
+    player1Name = username;
+    player2Name = "BOT";
+  }
 
   myRole = username === player1Name ? "player1" : "player2";
   isMyTurn = currentTurn === username;
@@ -211,8 +261,9 @@ socket.on("game_over", data => {
   loadLeaderboard();
 });
 
-/* -------- LEADERBOARD -------- */
-
+/* ================================
+   LEADERBOARD
+   ================================ */
 async function loadLeaderboard() {
   try {
     const res = await fetch(`${BACKEND_URL}/leaderboard`);
@@ -220,7 +271,8 @@ async function loadLeaderboard() {
     leaderboardUl.innerHTML = "";
 
     if (!data.length) {
-      leaderboardUl.innerHTML = "<li class='empty-state'>No games yet</li>";
+      leaderboardUl.innerHTML =
+          "<li class='empty-state'>No games yet</li>";
       return;
     }
 
