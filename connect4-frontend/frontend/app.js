@@ -256,21 +256,58 @@ function restartSameMode() {
 /* ================================
    SOCKET EVENTS
    ================================ */
-socket.on("game_start", data => {
+
+/** Contract: waiting_for_opponent — no payload */
+socket.on("waiting_for_opponent", () => {
+  updateStatus("⏳ Waiting for opponent...", "waiting");
+});
+
+/** Contract: game_resume — identical shape to game_start */
+socket.on("game_resume", data => {
+  // Contract: gameId, players[], currentTurn, board, mode, difficulty
   gameId = data.gameId;
   currentTurn = data.currentTurn;
   gameActive = true;
+  selectedMode = data.mode || "PVP";
+  selectedDifficulty = data.difficulty || null;
 
   joinSection.style.display = "none";
 
-  if (data.player1) {
-    player1Name = data.player1;
-    player2Name = data.player2 || "BOT";
-  } else if (Array.isArray(data.players)) {
+  if (Array.isArray(data.players) && data.players.length >= 2) {
     player1Name = data.players[0];
-    player2Name = data.players[1] || "BOT";
+    player2Name = data.players[1];
   } else {
-    console.error("❌ Invalid game_start payload", data);
+    console.error("❌ Invalid game_resume payload: missing players[]", data);
+    return;
+  }
+
+  myRole = username === player1Name ? "player1" : "player2";
+  isMyTurn = currentTurn === username;
+
+  updatePlayerLegend(player1Name, player2Name);
+  updateStatus(
+    isMyTurn ? "🔄 Reconnected — Your Turn" : "🔄 Reconnected — Waiting...",
+    "waiting"
+  );
+  renderBoard(data.board);
+});
+
+socket.on("game_start", data => {
+  // Contract: gameId, players[], currentTurn, board, mode, difficulty
+  gameId = data.gameId;
+  currentTurn = data.currentTurn;
+  gameActive = true;
+  selectedMode = data.mode || "PVP";
+  selectedDifficulty = data.difficulty || null;
+
+  joinSection.style.display = "none";
+
+  // Contract guarantees players is string[2]
+  if (Array.isArray(data.players) && data.players.length >= 2) {
+    player1Name = data.players[0];
+    player2Name = data.players[1];
+  } else {
+    console.error("❌ Invalid game_start payload: missing players[]", data);
     return;
   }
 
@@ -290,6 +327,7 @@ socket.on("game_update", data => {
 });
 
 socket.on("game_over", data => {
+  // Contract: reason ("win"|"draw"|"forfeit"), winner (string|null), winningCells (array|undefined)
   gameActive = false;
   isMyTurn = false;
 
@@ -297,29 +335,92 @@ socket.on("game_over", data => {
   let title = "🤝 It's a Draw!";
   let subtitle = "Well played!";
 
-  if (data.winner) {
-    if (data.winner === username) {
+  // Use backend's reason field as source of truth
+  const reason = data.reason; // "win" | "draw" | "forfeit"
+  const winner = data.winner; // string | null
+
+  if (reason === "win" || reason === "forfeit") {
+    if (winner === username) {
       result = "win";
       title = "🎉 You Win!";
-      subtitle = "Great game!";
+      subtitle = reason === "forfeit" ? "Opponent forfeited!" : "Great game!";
       updateStatus("🎉 You Win!", "winner");
     } else {
       result = "lose";
       title = "Game Over";
-      subtitle = `${data.winner} wins`;
+      subtitle = reason === "forfeit"
+        ? "You forfeited"
+        : `${winner} wins`;
       updateStatus("❌ You Lose", "loser");
     }
   } else {
+    // reason === "draw"
     updateStatus("🤝 Draw", "draw");
   }
 
   renderBoard(data.board);
+
+  // Highlight winning cells if present (only when reason === "win")
+  if (data.winningCells && Array.isArray(data.winningCells)) {
+    highlightWinningCells(data.winningCells);
+  }
 
   setTimeout(() => {
     showGameOverModal(result, title, subtitle);
   }, 600);
 
   loadLeaderboard();
+});
+
+/** Highlight winning cells on the board */
+function highlightWinningCells(cells) {
+  const allCells = boardDiv.querySelectorAll(".cell");
+  cells.forEach(({ row, col }) => {
+    const index = row * 7 + col;
+    if (allCells[index]) {
+      allCells[index].classList.add("winning-cell");
+    }
+  });
+}
+
+/** Contract: opponent_disconnected — { username: string } */
+socket.on("opponent_disconnected", data => {
+  if (data && data.username) {
+    updateStatus(`⚠️ ${data.username} disconnected...`, "warning");
+    showToast(`${data.username} disconnected`, "warning");
+  }
+});
+
+/** Contract: opponent_reconnected — { username: string } */
+socket.on("opponent_reconnected", data => {
+  if (data && data.username) {
+    updateStatus(
+      isMyTurn ? "🟢 Your Turn" : "⏳ Waiting...",
+      "waiting"
+    );
+    showToast(`${data.username} reconnected`, "info");
+  }
+});
+
+/** Contract: error — plain string payload */
+socket.on("error", message => {
+  // Contract: message is a plain string, NOT an object
+  if (typeof message === "string") {
+    showToast(`❌ ${message}`, "error");
+    console.error("Server error:", message);
+  }
+  // Re-enable join button if it was disabled
+  joinBtn.disabled = false;
+});
+
+/** Contract: join_error — { code: string, message: string } */
+socket.on("join_error", data => {
+  if (data && data.message) {
+    showToast(`❌ ${data.message}`, "error");
+    console.error("Join error:", data.code, data.message);
+  }
+  // Re-enable join button
+  joinBtn.disabled = false;
 });
 
 /* ================================
