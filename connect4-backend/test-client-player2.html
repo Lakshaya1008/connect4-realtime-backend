@@ -46,6 +46,8 @@
     window.socket = socket;
 
     let gameId = null;
+    let gameActive = false; // FIX: Track game state
+    let isProcessingMove = false; // FIX: Prevent rapid clicks
     const username = 'player2';
 
     socket.on('waiting_for_opponent', () => console.log('⏳ WAITING FOR PVP OPPONENT...'));
@@ -54,6 +56,7 @@
       console.log('🎮 GAME STARTED:', data.gameId);
       console.log('Mode:', data.mode);
       gameId = data.gameId;
+      gameActive = true; // FIX: Enable moves
       console.table(data.board);
       document.getElementById('gameControls').style.display = 'block';
     });
@@ -61,16 +64,23 @@
     socket.on('game_update', (data) => {
       console.log('TURN:', data.currentTurn);
       console.table(data.board);
+      isProcessingMove = false; // FIX: Unlock for next turn
     });
 
     socket.on('game_over', (data) => {
+      gameActive = false; // FIX: Block moves immediately
+      isProcessingMove = false; // FIX: Reset lock
       console.log('🏆 GAME OVER:', data);
+      console.log('Winner:', data.winner);
+      console.log('Reason:', data.reason);
+      if (data.winningCells) console.log('Winning cells:', data.winningCells);
       document.getElementById('gameControls').style.display = 'none';
     });
 
     socket.on('game_resume', (data) => {
       console.log('🔄 GAME RESUMED:', data.gameId);
       gameId = data.gameId;
+      gameActive = true; // FIX: Enable moves on resume
       console.table(data.board);
       console.log('Current turn:', data.currentTurn);
       document.getElementById('gameControls').style.display = 'block';
@@ -91,6 +101,17 @@
 
     window.move = function(col){
       if (!gameId) { console.warn('Game not started yet'); return; }
+      // FIX: Guard to prevent moves after game_over
+      if (!gameActive) {
+        console.warn('⛔ Move blocked - game is not active');
+        return;
+      }
+      // FIX: Prevent rapid clicks during move processing
+      if (isProcessingMove) {
+        console.warn('⛔ Move blocked - processing previous move');
+        return;
+      }
+      isProcessingMove = true; // FIX: Lock until backend responds
       console.log('P2 PLAY:', col);
       socket.emit('make_move', { gameId, column: col, username });
     };

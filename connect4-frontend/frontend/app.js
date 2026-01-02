@@ -55,6 +55,7 @@ let player2Name = null;
 let myRole = null;
 let gameActive = false;
 let isMyTurn = false;
+let isProcessingMove = false; // ✅ Guard against rapid clicks
 let selectedMode = "PVP";
 let selectedDifficulty = "MEDIUM";
 
@@ -200,6 +201,10 @@ function renderBoard(board) {
           setTimeout(() => div.classList.remove("invalid-click"), 300);
           return;
         }
+        if (isProcessingMove) {
+          // ✅ Prevent rapid clicks during move processing
+          return;
+        }
         if (cell) {
           showToast("❌ Slot already filled", "error");
           div.classList.add("invalid-click");
@@ -207,6 +212,8 @@ function renderBoard(board) {
           return;
         }
 
+        // ✅ Lock input until backend responds
+        isProcessingMove = true;
         socket.emit("make_move", { gameId, column: col, username });
       };
 
@@ -250,6 +257,7 @@ function restartSameMode() {
   gameId = null;
   gameActive = false;
   isMyTurn = false;
+  isProcessingMove = false; // ✅ Reset lock for new game
 
   boardDiv.innerHTML = "";
   playerLegend.style.display = "none";
@@ -334,16 +342,29 @@ socket.on("game_start", data => {
 });
 
 socket.on("game_update", data => {
+  console.log("📋 GAME_UPDATE — Turn:", data.currentTurn); // 🔍 DEBUG
   currentTurn = data.currentTurn;
   isMyTurn = currentTurn === username;
+  isProcessingMove = false; // ✅ Unlock after backend processes move
   updateStatus(isMyTurn ? "🟢 Your Turn" : "⏳ Waiting...", "waiting");
   renderBoard(data.board);
 });
 
 socket.on("game_over", data => {
   // Contract: reason ("win"|"draw"|"forfeit"), winner (string|null), winningCells (array|undefined)
+
+  // 🔍 DEBUG: Log game_over event
+  console.group("🏆 GAME_OVER RECEIVED");
+  console.log("Winner:", data.winner);
+  console.log("Reason:", data.reason);
+  console.log("Winning cells:", data.winningCells);
+  console.log("Board state:", data.board);
+  console.groupEnd();
+
+  // ✅ IMMEDIATE STATE LOCK — Block all input before processing
   gameActive = false;
   isMyTurn = false;
+  isProcessingMove = false; // Reset lock
 
   let result = "draw";
   let title = "🤝 It's a Draw!";
